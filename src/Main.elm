@@ -295,15 +295,15 @@ isAirborne jumping =
 animationFrame : Model -> String
 animationFrame model =
     if isAirborne model.jumping then
-        "-80px"
+        jumpingFrame
     else if not (isRunning model) then
-        "-10px"
+        idleFrame
     else if model.tick <= 48 then
-        "-45px"
+        runningFrame2
     else if model.tick <= 96 then
-        "-80px"
+        runningFrame3
     else
-        "-10px"
+        runningFrame1
 
 
 view : Model -> Html Msg
