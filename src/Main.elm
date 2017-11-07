@@ -26,9 +26,54 @@ acceleration =
     0.75
 
 
+gravity : Float
+gravity =
+    1.25
+
+
+maxVelocityX : Float
+maxVelocityX =
+    300
+
+
+jumpVelocity : Float
+jumpVelocity =
+    500
+
+
+terminalVelocity : Float
+terminalVelocity =
+    300
+
+
+idleFrame : String
+idleFrame =
+    "-10px"
+
+
+jumpingFrame : String
+jumpingFrame =
+    "-80px"
+
+
+runningFrame1 : String
+runningFrame1 =
+    "-10px"
+
+
+runningFrame2 : String
+runningFrame2 =
+    "-45px"
+
+
+runningFrame3 : String
+runningFrame3 =
+    "-80px"
+
+
 init : ( Model, Cmd Msg )
 init =
-    ( { locationX = spriteWidth / 2, locationY = 0, facing = Right 0, jumping = False, animating = False, tick = 0 }, Cmd.none )
+    ( { locationX = spriteWidth / 2, locationY = 0, facing = Right 0, jumping = Grounded, tick = 0 }, Cmd.none )
 
 
 type Msg
@@ -41,8 +86,7 @@ type alias Model =
     { locationX : Float
     , locationY : Float
     , facing : Facing
-    , jumping : Bool
-    , animating : Bool
+    , jumping : Jumping
     , tick : Float
     }
 
@@ -50,6 +94,12 @@ type alias Model =
 type Facing
     = Left Float
     | Right Float
+
+
+type Jumping
+    = Grounded
+    | Jumping Float
+    | Falling Float
 
 
 subscriptions : Model -> Sub Msg
@@ -66,8 +116,7 @@ update msg model =
     case msg of
         KeyDown 39 ->
             ( { model
-                | animating = True
-                , facing =
+                | facing =
                     case model.facing of
                         Right 0 ->
                             Right 10
@@ -82,12 +131,11 @@ update msg model =
             )
 
         KeyUp 39 ->
-            ( { model | animating = False, facing = Right 0 }, Cmd.none )
+            ( { model | facing = Right 0 }, Cmd.none )
 
         KeyDown 37 ->
             ( { model
-                | animating = True
-                , facing =
+                | facing =
                     case model.facing of
                         Left 0 ->
                             Left 10
@@ -102,10 +150,10 @@ update msg model =
             )
 
         KeyUp 37 ->
-            ( { model | animating = False, facing = Left 0 }, Cmd.none )
+            ( { model | facing = Left 0 }, Cmd.none )
 
         KeyDown 32 ->
-            ( { model | animating = False, jumping = True }, Cmd.none )
+            ( { model | jumping = Jumping jumpVelocity }, Cmd.none )
 
         KeyDown _ ->
             ( model, Cmd.none )
@@ -121,7 +169,7 @@ tick : Float -> Model -> ( Model, Cmd Msg )
 tick delta model =
     ( model
         |> updateTick delta
-        |> updateFacing delta
+        |> updateVelocity delta
         |> updateLocation delta
     , Cmd.none
     )
@@ -131,7 +179,7 @@ updateTick : Float -> Model -> Model
 updateTick delta model =
     { model
         | tick =
-            if model.animating == False then
+            if not (isRunning model) then
                 0
             else if model.tick > 144 then
                 -- 144 is how many ticks for full animation cycle
@@ -141,8 +189,8 @@ updateTick delta model =
     }
 
 
-updateFacing : Float -> Model -> Model
-updateFacing delta model =
+updateVelocity : Float -> Model -> Model
+updateVelocity delta model =
     { model
         | facing =
             case model.facing of
@@ -150,8 +198,8 @@ updateFacing delta model =
                     Right 0
 
                 Right velocityX ->
-                    if velocityX + acceleration >= 300 then
-                        Right 300
+                    if velocityX + (acceleration * delta) >= maxVelocityX then
+                        Right maxVelocityX
                     else
                         Right (velocityX + (acceleration * delta))
 
@@ -159,10 +207,28 @@ updateFacing delta model =
                     Left 0
 
                 Left velocityX ->
-                    if velocityX + acceleration >= 300 then
-                        Left 300
+                    if velocityX + (acceleration * delta) >= maxVelocityX then
+                        Left maxVelocityX
                     else
                         Left (velocityX + (acceleration * delta))
+        , jumping =
+            case model.jumping of
+                Grounded ->
+                    Grounded
+
+                Jumping velocityY ->
+                    if velocityY - (gravity * delta) > 0 then
+                        Jumping (velocityY - (gravity * delta))
+                    else
+                        Falling 0
+
+                Falling velocityY ->
+                    if isGrounded model then
+                        Grounded
+                    else if velocityY + (gravity * delta) <= terminalVelocity then
+                        Falling (velocityY + (gravity * delta))
+                    else
+                        Falling terminalVelocity
     }
 
 
@@ -182,22 +248,67 @@ updateLocation delta model =
 
                 Left velocityX ->
                     model.locationX - ((velocityX / 1000) * delta)
+        , locationY =
+            case model.jumping of
+                Grounded ->
+                    0
+
+                Jumping velocityY ->
+                    model.locationY + ((velocityY / 1000) * delta)
+
+                Falling velocityY ->
+                    model.locationY - ((velocityY / 1000) * delta)
     }
+
+
+isRunning : Model -> Bool
+isRunning model =
+    case model.facing of
+        Right velocityX ->
+            not (isAirborne model.jumping) && velocityX > 0
+
+        Left velocityX ->
+            not (isAirborne model.jumping) && velocityX > 0
+
+
+isGrounded : Model -> Bool
+isGrounded model =
+    if model.locationY <= 0 then
+        True
+    else
+        False
+
+
+isAirborne : Jumping -> Bool
+isAirborne jumping =
+    case jumping of
+        Jumping _ ->
+            True
+
+        Falling _ ->
+            True
+
+        Grounded ->
+            False
+
+
+animationFrame : Model -> String
+animationFrame model =
+    if isAirborne model.jumping then
+        "-80px"
+    else if not (isRunning model) then
+        "-10px"
+    else if model.tick <= 48 then
+        "-45px"
+    else if model.tick <= 96 then
+        "-80px"
+    else
+        "-10px"
 
 
 view : Model -> Html Msg
 view model =
     let
-        backgroundPosition =
-            if model.animating == False then
-                "-10px"
-            else if model.tick <= 48 then
-                "-45px"
-            else if model.tick <= 96 then
-                "-80px"
-            else
-                "-10px"
-
         scale =
             case model.facing of
                 Right _ ->
@@ -217,7 +328,7 @@ view model =
                 , ( "bottom", toString model.locationY ++ "px" )
                 , ( "border", "1px solid black" )
                 , ( "background-repeat", "no-repeat" )
-                , ( "background-position", backgroundPosition )
+                , ( "background-position", animationFrame model )
                 , ( "transform", scale )
                 , ( "transform-origin", "center bottom" )
                 ]
