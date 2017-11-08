@@ -38,12 +38,12 @@ maxVelocityX =
 
 jumpVelocity : Float
 jumpVelocity =
-    500
+    600
 
 
 terminalVelocity : Float
 terminalVelocity =
-    300
+    800
 
 
 idleFrame : String
@@ -306,31 +306,32 @@ animationFrame model =
         runningFrame1
 
 
+spriteFacing : Model -> String
+spriteFacing model =
+    case model.facing of
+        Right _ ->
+            "scale(2)"
+
+        Left _ ->
+            "scale(-2, 2)"
+
+
 view : Model -> Html Msg
 view model =
-    let
-        scale =
-            case model.facing of
-                Right _ ->
-                    "scale(2)"
-
-                Left _ ->
-                    "scale(-2, 2)"
-    in
-        div
-            [ style
-                [ ( "background-image", "url(/img/mario.png)" )
-                , ( "display", "table" )
-                , ( "width", toString spriteWidth ++ "px" )
-                , ( "height", "27px" )
-                , ( "position", "absolute" )
-                , ( "left", toString model.locationX ++ "px" )
-                , ( "bottom", toString model.locationY ++ "px" )
-                , ( "border", "1px solid black" )
-                , ( "background-repeat", "no-repeat" )
-                , ( "background-position", animationFrame model )
-                , ( "transform", scale )
-                , ( "transform-origin", "center bottom" )
-                ]
+    div
+        [ style
+            [ ( "background-image", "url(/img/mario.png)" )
+            , ( "display", "table" )
+            , ( "width", toString spriteWidth ++ "px" )
+            , ( "height", "27px" )
+            , ( "position", "absolute" )
+            , ( "left", toString model.locationX ++ "px" )
+            , ( "bottom", toString model.locationY ++ "px" )
+            , ( "border", "1px solid black" )
+            , ( "background-repeat", "no-repeat" )
+            , ( "background-position", animationFrame model )
+            , ( "transform", spriteFacing model )
+            , ( "transform-origin", "center bottom" )
             ]
-            []
+        ]
+        []
