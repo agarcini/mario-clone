@@ -71,6 +71,16 @@ runningFrame3 =
     "-80px"
 
 
+facingRight : String
+facingRight =
+    "scale(2)"
+
+
+facingLeft : String
+facingLeft =
+    "scale(-2,2)"
+
+
 init : ( Model, Cmd Msg )
 init =
     ( { locationX = spriteWidth / 2, locationY = 0, facing = Right 0, jumping = Grounded, tick = 0 }, Cmd.none )
@@ -310,10 +320,10 @@ spriteFacing : Model -> String
 spriteFacing model =
     case model.facing of
         Right _ ->
-            "scale(2)"
+            facingRight
 
         Left _ ->
-            "scale(-2, 2)"
+            facingLeft
 
 
 view : Model -> Html Msg
