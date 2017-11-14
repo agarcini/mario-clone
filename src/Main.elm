@@ -21,6 +21,11 @@ spriteWidth =
     16
 
 
+blockSize : Float
+blockSize =
+    32
+
+
 acceleration : Float
 acceleration =
     0.75
@@ -28,7 +33,7 @@ acceleration =
 
 gravity : Float
 gravity =
-    1.25
+    1.5
 
 
 maxVelocityX : Float
@@ -73,17 +78,17 @@ runningFrame3 =
 
 facingRight : String
 facingRight =
-    "scale(2)"
+    "scale(1)"
 
 
 facingLeft : String
 facingLeft =
-    "scale(-2,2)"
+    "scale(-1,1)"
 
 
 init : ( Model, Cmd Msg )
 init =
-    ( { locationX = spriteWidth / 2, locationY = 0, facing = Right 0, jumping = Grounded, tick = 0 }, Cmd.none )
+    ( { locationX = spriteWidth / 2, locationY = 0, facing = Right 0, jumping = Grounded, tick = 0, blocks = blockList }, Cmd.none )
 
 
 type Msg
@@ -98,6 +103,7 @@ type alias Model =
     , facing : Facing
     , jumping : Jumping
     , tick : Float
+    , blocks : List Coordinates
     }
 
 
@@ -163,7 +169,17 @@ update msg model =
             ( { model | facing = Left 0 }, Cmd.none )
 
         KeyDown 32 ->
-            ( { model | jumping = Jumping jumpVelocity }, Cmd.none )
+            ( { model
+                | jumping =
+                    case isAirborne model.jumping of
+                        False ->
+                            Jumping jumpVelocity
+
+                        True ->
+                            model.jumping
+              }
+            , Cmd.none
+            )
 
         KeyDown _ ->
             ( model, Cmd.none )
@@ -326,8 +342,8 @@ spriteFacing model =
             facingLeft
 
 
-view : Model -> Html Msg
-view model =
+character : Model -> Html Msg
+character model =
     div
         [ style
             [ ( "background-image", "url(/img/mario.png)" )
@@ -345,3 +361,60 @@ view model =
             ]
         ]
         []
+
+
+type alias Coordinates =
+    { x : Float
+    , y : Float
+    }
+
+
+blockView : Coordinates -> Html Msg
+blockView coordinates =
+    div
+        [ style
+            [ ( "display", "table" )
+            , ( "width", toString blockSize ++ "px" )
+            , ( "height", toString blockSize ++ "px" )
+            , ( "position", "absolute" )
+            , ( "left", toString coordinates.x ++ "px" )
+            , ( "bottom", toString coordinates.y ++ "px" )
+            , ( "background-color", "brown" )
+            , ( "border-radius", "4px" )
+            , ( "box-shadow", "inset 0 0 0 2px rgba(0,0,0,0.1)" )
+            ]
+        ]
+        []
+
+
+blockList : List Coordinates
+blockList =
+    [ { x = 100, y = 25 }
+    , { x = 100 + blockSize, y = 25 }
+    , { x = 100 + (blockSize * 2), y = 25 }
+    , { x = 100 + (blockSize * 3), y = 25 }
+    ]
+
+
+worldMap : Model -> Html Msg
+worldMap model =
+    let
+        worldScale =
+            2
+    in
+        div
+            [ style
+                [ ( "transform", "scale(" ++ toString worldScale ++ ")" )
+                , ( "width", toString (100 / worldScale) ++ "vw" )
+                , ( "height", "100vh" )
+                , ( "transform-origin", "left bottom" )
+                , ( "overflow", "hidden" )
+                , ( "background-color", "skyblue" )
+                ]
+            ]
+            (character model :: List.map blockView model.blocks)
+
+
+view : Model -> Html Msg
+view model =
+    worldMap model
