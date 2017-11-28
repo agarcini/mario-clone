@@ -21,6 +21,11 @@ spriteWidth =
     16
 
 
+spriteHeight : Float
+spriteHeight =
+    27
+
+
 blockSize : Float
 blockSize =
     32
@@ -33,22 +38,23 @@ acceleration =
 
 gravity : Float
 gravity =
-    1.5
+    1.333
 
 
 maxVelocityX : Float
 maxVelocityX =
-    300
+    150
 
 
 jumpVelocity : Float
 jumpVelocity =
-    600
+    450
 
 
 terminalVelocity : Float
 terminalVelocity =
-    800
+    -- 600
+    10
 
 
 idleFrame : String
@@ -88,7 +94,16 @@ facingLeft =
 
 init : ( Model, Cmd Msg )
 init =
-    ( { locationX = spriteWidth / 2, locationY = 0, facing = Right 0, jumping = Grounded, tick = 0, blocks = blockList }, Cmd.none )
+    ( { locationX = 0
+      , locationY = 0
+      , facing = Right 0
+      , jumping = Grounded
+      , tick = 0
+      , blocks = blockList
+      , colliding = [ BottomEdge ]
+      }
+    , Cmd.none
+    )
 
 
 type Msg
@@ -104,7 +119,15 @@ type alias Model =
     , jumping : Jumping
     , tick : Float
     , blocks : List Coordinates
+    , colliding : List Collision
     }
+
+
+type Collision
+    = BottomEdge
+    | TopEdge
+    | LeftEdge
+    | RightEdge
 
 
 type Facing
@@ -318,6 +341,19 @@ isAirborne jumping =
             False
 
 
+isFalling : Jumping -> Bool
+isFalling jumping =
+    case jumping of
+        Jumping _ ->
+            False
+
+        Falling _ ->
+            True
+
+        Grounded ->
+            False
+
+
 animationFrame : Model -> String
 animationFrame model =
     if isAirborne model.jumping then
@@ -369,6 +405,108 @@ type alias Coordinates =
     }
 
 
+overlapCheck : Coordinates -> Model -> Bool
+overlapCheck coordinates model =
+    let
+        marioBottomEdge =
+            model.locationY
+
+        marioLeftEdge =
+            model.locationX
+
+        marioRightEdge =
+            model.locationX + spriteWidth
+
+        marioTopEdge =
+            model.locationY + spriteHeight
+
+        marioOverlappingBottom =
+            marioBottomEdge < (coordinates.y + blockSize) && marioBottomEdge > coordinates.y
+
+        marioOverlappingRight =
+            marioRightEdge > coordinates.x && marioRightEdge < (coordinates.x + blockSize)
+
+        marioOverlappingLeft =
+            marioLeftEdge < (coordinates.x + blockSize) && marioLeftEdge > coordinates.x
+
+        marioOverlappingTop =
+            marioTopEdge < (coordinates.y + blockSize) && marioTopEdge > coordinates.y
+    in
+        (marioOverlappingBottom || marioOverlappingTop) && (marioOverlappingRight || marioOverlappingLeft)
+
+
+bottomCollisionCheck : Coordinates -> Model -> List Collision -> List Collision
+bottomCollisionCheck coordinates model list =
+    let
+        marioBottomEdge =
+            model.locationY + spriteHeight
+    in
+        if overlapCheck coordinates model && isFalling model.jumping then
+            BottomEdge :: list
+        else
+            list
+
+
+topCollisionCheck : Coordinates -> Model -> List Collision -> List Collision
+topCollisionCheck coordinates model list =
+    let
+        marioTopEdge =
+            model.locationY + spriteHeight
+    in
+        if marioTopEdge > coordinates.y then
+            TopEdge :: list
+        else
+            list
+
+
+leftCollisionCheck : Coordinates -> Model -> List Collision -> List Collision
+leftCollisionCheck coordinates model list =
+    let
+        marioLeftEdge =
+            model.locationX
+
+        marioLeftWithinZone =
+            marioLeftEdge < (coordinates.x + blockSize) && marioLeftEdge > coordinates.x
+    in
+        if marioLeftWithinZone then
+            LeftEdge :: list
+        else
+            list
+
+
+rightCollisionCheck : Coordinates -> (Model -> (List Collision -> List Collision))
+rightCollisionCheck coordinates model list =
+    let
+        marioRightEdge =
+            model.locationX + spriteWidth
+
+        marioRightWithinZone =
+            marioRightEdge > coordinates.x && marioRightEdge < (coordinates.x + blockSize)
+    in
+        if marioRightWithinZone then
+            RightEdge :: list
+        else
+            list
+
+
+isColliding : Model -> Coordinates -> List Collision
+isColliding model coordinates =
+    let
+        collisionsDetected =
+            []
+    in
+        collisionsDetected
+            |> bottomCollisionCheck coordinates model
+            |> topCollisionCheck coordinates model
+            |> leftCollisionCheck coordinates model
+            |> rightCollisionCheck coordinates model
+
+
+blockCollisionCheck : List Coordinates -> Model -> List (List Collision)
+blockCollisionCheck blockList model =
+    List.map (isColliding model) blockList
+
+
 blockView : Coordinates -> Html Msg
 blockView coordinates =
     div
@@ -381,6 +519,7 @@ blockView coordinates =
             , ( "bottom", toString coordinates.y ++ "px" )
             , ( "background-color", "brown" )
             , ( "border-radius", "4px" )
+            , ( "box-sizing", "border-box" )
             , ( "box-shadow", "inset 0 0 0 2px rgba(0,0,0,0.1)" )
             ]
         ]
@@ -390,9 +529,9 @@ blockView coordinates =
 blockList : List Coordinates
 blockList =
     [ { x = 100, y = 25 }
-    , { x = 100 + blockSize, y = 25 }
-    , { x = 100 + (blockSize * 2), y = 25 }
-    , { x = 100 + (blockSize * 3), y = 25 }
+      -- , { x = 100 + blockSize, y = 25 }
+      -- , { x = 100 + (blockSize * 2), y = 25 }
+      -- , { x = 100 + (blockSize * 3), y = 25 }
     ]
 
 
@@ -411,6 +550,7 @@ worldMap model =
                 , ( "overflow", "hidden" )
                 , ( "background-color", "skyblue" )
                 ]
+            , attribute "data-collisions" (toString (blockCollisionCheck blockList model))
             ]
             (character model :: List.map blockView model.blocks)
 
