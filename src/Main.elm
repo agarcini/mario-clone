@@ -28,7 +28,7 @@ spriteHeight =
 
 blockSize : Float
 blockSize =
-    32
+    24
 
 
 acceleration : Float
@@ -53,8 +53,7 @@ jumpVelocity =
 
 terminalVelocity : Float
 terminalVelocity =
-    -- 600
-    10
+    600
 
 
 idleFrame : String
@@ -263,7 +262,10 @@ updateVelocity delta model =
         , jumping =
             case model.jumping of
                 Grounded ->
-                    Grounded
+                    if isGrounded model then
+                        Grounded
+                    else
+                        Falling 0
 
                 Jumping velocityY ->
                     if velocityY - (gravity * delta) > 0 then
@@ -300,7 +302,10 @@ updateLocation delta model =
         , locationY =
             case model.jumping of
                 Grounded ->
-                    0
+                    if model.locationY < 0 then
+                        0
+                    else
+                        model.locationY
 
                 Jumping velocityY ->
                     model.locationY + ((velocityY / 1000) * delta)
@@ -322,7 +327,7 @@ isRunning model =
 
 isGrounded : Model -> Bool
 isGrounded model =
-    if model.locationY <= 0 then
+    if model.locationY <= 0 || isBottomColliding blockList model then
         True
     else
         False
@@ -435,76 +440,131 @@ overlapCheck coordinates model =
         (marioOverlappingBottom || marioOverlappingTop) && (marioOverlappingRight || marioOverlappingLeft)
 
 
-bottomCollisionCheck : Coordinates -> Model -> List Collision -> List Collision
-bottomCollisionCheck coordinates model list =
+bottomOverlapCheck : Coordinates -> Model -> List Collision -> List Collision
+bottomOverlapCheck coordinates model list =
     let
         marioBottomEdge =
-            model.locationY + spriteHeight
+            model.locationY
+
+        marioOverlappingBottom =
+            marioBottomEdge < (coordinates.y + blockSize) && marioBottomEdge > coordinates.y
     in
-        if overlapCheck coordinates model && isFalling model.jumping then
+        if overlapCheck coordinates model && marioOverlappingBottom then
             BottomEdge :: list
         else
             list
 
 
-topCollisionCheck : Coordinates -> Model -> List Collision -> List Collision
-topCollisionCheck coordinates model list =
+topOverlapCheck : Coordinates -> Model -> List Collision -> List Collision
+topOverlapCheck coordinates model list =
     let
         marioTopEdge =
             model.locationY + spriteHeight
+
+        marioOverlappingTop =
+            marioTopEdge < (coordinates.y + blockSize) && marioTopEdge > coordinates.y
     in
-        if marioTopEdge > coordinates.y then
+        if overlapCheck coordinates model && marioOverlappingTop then
             TopEdge :: list
         else
             list
 
 
-leftCollisionCheck : Coordinates -> Model -> List Collision -> List Collision
-leftCollisionCheck coordinates model list =
+leftOverlapCheck : Coordinates -> Model -> List Collision -> List Collision
+leftOverlapCheck coordinates model list =
     let
         marioLeftEdge =
             model.locationX
 
-        marioLeftWithinZone =
+        marioOverlappingLeft =
             marioLeftEdge < (coordinates.x + blockSize) && marioLeftEdge > coordinates.x
     in
-        if marioLeftWithinZone then
+        if overlapCheck coordinates model && marioOverlappingLeft then
             LeftEdge :: list
         else
             list
 
 
-rightCollisionCheck : Coordinates -> (Model -> (List Collision -> List Collision))
-rightCollisionCheck coordinates model list =
+rightOverlapCheck : Coordinates -> Model -> List Collision -> List Collision
+rightOverlapCheck coordinates model list =
     let
         marioRightEdge =
             model.locationX + spriteWidth
 
-        marioRightWithinZone =
+        marioOverlappingRight =
             marioRightEdge > coordinates.x && marioRightEdge < (coordinates.x + blockSize)
     in
-        if marioRightWithinZone then
+        if overlapCheck coordinates model && marioOverlappingRight then
             RightEdge :: list
         else
             list
 
 
-isColliding : Model -> Coordinates -> List Collision
-isColliding model coordinates =
+isOverlapping : Model -> Coordinates -> List Collision
+isOverlapping model coordinates =
     let
-        collisionsDetected =
+        overlapsDetected =
             []
     in
-        collisionsDetected
-            |> bottomCollisionCheck coordinates model
-            |> topCollisionCheck coordinates model
-            |> leftCollisionCheck coordinates model
-            |> rightCollisionCheck coordinates model
+        overlapsDetected
+            |> bottomOverlapCheck coordinates model
+            |> topOverlapCheck coordinates model
+            |> leftOverlapCheck coordinates model
+            |> rightOverlapCheck coordinates model
 
 
-blockCollisionCheck : List Coordinates -> Model -> List (List Collision)
-blockCollisionCheck blockList model =
-    List.map (isColliding model) blockList
+blockOverlapCheck : List Coordinates -> Model -> List (List Collision)
+blockOverlapCheck blockList model =
+    List.map (isOverlapping model) blockList
+
+
+listNotEmpty : List Collision -> Bool
+listNotEmpty list =
+    case List.length list of
+        0 ->
+            False
+
+        _ ->
+            True
+
+
+findCollisions : List Coordinates -> Model -> List (List Collision)
+findCollisions blockList model =
+    List.filter listNotEmpty (blockOverlapCheck blockList model)
+
+
+isBottomCollision : Collision -> Bool
+isBottomCollision collision =
+    if collision == BottomEdge then
+        True
+    else
+        False
+
+
+hasBottomCollision : List Collision -> Bool
+hasBottomCollision list =
+    if List.any isBottomCollision list then
+        True
+    else
+        False
+
+
+findBottomCollisions : List Coordinates -> Model -> List Bool
+findBottomCollisions blockList model =
+    List.map hasBottomCollision (blockOverlapCheck blockList model)
+
+
+isBottomColliding : List Coordinates -> Model -> Bool
+isBottomColliding blockList model =
+    List.any isTrue (findBottomCollisions blockList model)
+
+
+isTrue : Bool -> Bool
+isTrue bool =
+    if bool == True then
+        True
+    else
+        False
 
 
 blockView : Coordinates -> Html Msg
@@ -528,10 +588,10 @@ blockView coordinates =
 
 blockList : List Coordinates
 blockList =
-    [ { x = 100, y = 25 }
-      -- , { x = 100 + blockSize, y = 25 }
-      -- , { x = 100 + (blockSize * 2), y = 25 }
-      -- , { x = 100 + (blockSize * 3), y = 25 }
+    [ { x = 100, y = 18 }
+    , { x = 100 + blockSize, y = 18 }
+    , { x = 100 + (blockSize * 2), y = 18 }
+    , { x = 100 + (blockSize * 3), y = 18 }
     ]
 
 
@@ -550,7 +610,8 @@ worldMap model =
                 , ( "overflow", "hidden" )
                 , ( "background-color", "skyblue" )
                 ]
-            , attribute "data-collisions" (toString (blockCollisionCheck blockList model))
+              -- , attribute "data-blocks" (toString (blockOverlapCheck blockList model))
+            , attribute "data-collisions" (toString (findCollisions blockList model))
             ]
             (character model :: List.map blockView model.blocks)
 
