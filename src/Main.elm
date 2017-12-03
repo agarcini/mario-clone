@@ -4,6 +4,7 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import AnimationFrame
 import Keyboard exposing (KeyCode)
+import Array
 
 
 main : Program Never Model Msg
@@ -302,10 +303,10 @@ updateLocation delta model =
         , locationY =
             case model.jumping of
                 Grounded ->
-                    if model.locationY < 0 then
+                    if model.locationY <= 0 then
                         0
                     else
-                        model.locationY
+                        findPlatformY (getBottomCollisionCoordinates model blockList)
 
                 Jumping velocityY ->
                     model.locationY + ((velocityY / 1000) * delta)
@@ -327,7 +328,7 @@ isRunning model =
 
 isGrounded : Model -> Bool
 isGrounded model =
-    if model.locationY <= 0 || isBottomColliding blockList model then
+    if model.locationY <= 0 || bottomIsColliding model blockList then
         True
     else
         False
@@ -394,7 +395,6 @@ character model =
             , ( "position", "absolute" )
             , ( "left", toString model.locationX ++ "px" )
             , ( "bottom", toString model.locationY ++ "px" )
-            , ( "border", "1px solid black" )
             , ( "background-repeat", "no-repeat" )
             , ( "background-position", animationFrame model )
             , ( "transform", spriteFacing model )
@@ -417,10 +417,10 @@ overlapCheck coordinates model =
             model.locationY
 
         marioLeftEdge =
-            model.locationX
+            model.locationX + (spriteWidth * 0.5)
 
         marioRightEdge =
-            model.locationX + spriteWidth
+            model.locationX + (spriteWidth * 0.75)
 
         marioTopEdge =
             model.locationY + spriteHeight
@@ -474,7 +474,7 @@ leftOverlapCheck : Coordinates -> Model -> List Collision -> List Collision
 leftOverlapCheck coordinates model list =
     let
         marioLeftEdge =
-            model.locationX
+            model.locationX + (spriteWidth * 0.5)
 
         marioOverlappingLeft =
             marioLeftEdge < (coordinates.x + blockSize) && marioLeftEdge > coordinates.x
@@ -489,7 +489,7 @@ rightOverlapCheck : Coordinates -> Model -> List Collision -> List Collision
 rightOverlapCheck coordinates model list =
     let
         marioRightEdge =
-            model.locationX + spriteWidth
+            model.locationX + (spriteWidth * 0.75)
 
         marioOverlappingRight =
             marioRightEdge > coordinates.x && marioRightEdge < (coordinates.x + blockSize)
@@ -549,22 +549,46 @@ hasBottomCollision list =
         False
 
 
-findBottomCollisions : List Coordinates -> Model -> List Bool
-findBottomCollisions blockList model =
+findBottomCollisions : Model -> List Coordinates -> List Bool
+findBottomCollisions model blockList =
     List.map hasBottomCollision (blockOverlapCheck blockList model)
 
 
-isBottomColliding : List Coordinates -> Model -> Bool
-isBottomColliding blockList model =
-    List.any isTrue (findBottomCollisions blockList model)
+bottomIsColliding : Model -> List Coordinates -> Bool
+bottomIsColliding model blockList =
+    List.member True (findBottomCollisions model blockList)
 
 
-isTrue : Bool -> Bool
-isTrue bool =
-    if bool == True then
-        True
-    else
-        False
+findIndexOfLastTrue : List Bool -> Int
+findIndexOfLastTrue list =
+    case Array.get ((List.length list) - 1) (Array.fromList list) of
+        Just True ->
+            ((List.length list) - 1)
+
+        Just False ->
+            findIndexOfLastTrue (List.take ((List.length list) - 1) list)
+
+        Nothing ->
+            -1
+
+
+findCollidingBlock : List Coordinates -> Int -> Coordinates
+findCollidingBlock blockList index =
+    Maybe.withDefault
+        { x = 0, y = negate blockSize }
+        (Array.get index (Array.fromList blockList))
+
+
+getBottomCollisionCoordinates : Model -> List Coordinates -> Coordinates
+getBottomCollisionCoordinates model blockList =
+    findBottomCollisions model blockList
+        |> findIndexOfLastTrue
+        |> findCollidingBlock blockList
+
+
+findPlatformY : Coordinates -> Float
+findPlatformY coordinates =
+    coordinates.y + (blockSize - 0.25)
 
 
 blockView : Coordinates -> Html Msg
@@ -592,6 +616,12 @@ blockList =
     , { x = 100 + blockSize, y = 18 }
     , { x = 100 + (blockSize * 2), y = 18 }
     , { x = 100 + (blockSize * 3), y = 18 }
+    , { x = 100 + (blockSize * 3), y = 18 + (blockSize * 3) }
+    , { x = 100 + (blockSize * 4), y = 18 + (blockSize * 3) }
+    , { x = 100 + (blockSize * 5), y = 18 + (blockSize * 3) }
+    , { x = 100 + (blockSize * 6), y = 18 + (blockSize * 5) }
+    , { x = 100 + (blockSize * 7), y = 18 + (blockSize * 5) }
+    , { x = 100 + (blockSize * 9), y = 18 + (blockSize * 7) }
     ]
 
 
@@ -610,8 +640,9 @@ worldMap model =
                 , ( "overflow", "hidden" )
                 , ( "background-color", "skyblue" )
                 ]
-              -- , attribute "data-blocks" (toString (blockOverlapCheck blockList model))
-            , attribute "data-collisions" (toString (findCollisions blockList model))
+              -- , attribute "data-colliding" (toString (bottomIsColliding model blockList))
+              -- , attribute "data-jumping" (toString (model.jumping))
+              -- , attribute "data-collisions" (toString (findCollisions blockList model))
             ]
             (character model :: List.map blockView model.blocks)
 
