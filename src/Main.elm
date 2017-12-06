@@ -99,8 +99,8 @@ init =
       , facing = Right 0
       , jumping = Grounded
       , tick = 0
-      , blocks = blockList
-      , colliding = [ BottomEdge ]
+      , blocks = initBlockList
+      , colliding = []
       }
     , Cmd.none
     )
@@ -124,10 +124,11 @@ type alias Model =
 
 
 type Collision
-    = BottomEdge
-    | TopEdge
-    | LeftEdge
-    | RightEdge
+    = BottomEdge Coordinates
+    | TopEdge Coordinates
+    | LeftEdge Coordinates
+    | RightEdge Coordinates
+    | None
 
 
 type Facing
@@ -216,12 +217,16 @@ update msg model =
 
 tick : Float -> Model -> ( Model, Cmd Msg )
 tick delta model =
-    ( model
-        |> updateTick delta
-        |> updateVelocity delta
-        |> updateLocation delta
-    , Cmd.none
-    )
+    let
+        collisions =
+            blockOverlapCheck model.blocks model
+    in
+        ( model
+            |> updateTick delta
+            |> updateVelocity delta collisions
+            |> updateLocation delta collisions
+        , Cmd.none
+        )
 
 
 updateTick : Float -> Model -> Model
@@ -238,8 +243,8 @@ updateTick delta model =
     }
 
 
-updateVelocity : Float -> Model -> Model
-updateVelocity delta model =
+updateVelocity : Float -> List Collision -> Model -> Model
+updateVelocity delta collisions model =
     { model
         | facing =
             case model.facing of
@@ -247,7 +252,9 @@ updateVelocity delta model =
                     Right 0
 
                 Right velocityX ->
-                    if velocityX + (acceleration * delta) >= maxVelocityX then
+                    if hasRightCollision collisions then
+                        Right 0
+                    else if velocityX + (acceleration * delta) >= maxVelocityX then
                         Right maxVelocityX
                     else
                         Right (velocityX + (acceleration * delta))
@@ -263,7 +270,7 @@ updateVelocity delta model =
         , jumping =
             case model.jumping of
                 Grounded ->
-                    if isGrounded model then
+                    if isGrounded model collisions then
                         Grounded
                     else
                         Falling 0
@@ -275,7 +282,7 @@ updateVelocity delta model =
                         Falling 0
 
                 Falling velocityY ->
-                    if isGrounded model then
+                    if isGrounded model collisions then
                         Grounded
                     else if velocityY + (gravity * delta) <= terminalVelocity then
                         Falling (velocityY + (gravity * delta))
@@ -284,10 +291,16 @@ updateVelocity delta model =
     }
 
 
-updateLocation : Float -> Model -> Model
-updateLocation delta model =
+updateLocation : Float -> List Collision -> Model -> Model
+updateLocation delta collisions model =
     { model
         | locationX =
+            -- if isBlockedOnSide model blockList then
+            --     if rightIsColliding model blockList then
+            --         findLeftSideWall (getRightCollisionCoordinates model blockList)
+            --     else if leftIsColliding model blockList then
+            --         findRightSideWall (getLeftCollisionCoordinates model blockList)
+            -- else
             case model.facing of
                 Right 0 ->
                     model.locationX
@@ -306,7 +319,7 @@ updateLocation delta model =
                     if model.locationY <= 0 then
                         0
                     else
-                        findPlatformY (getBottomCollisionCoordinates model blockList)
+                        findTopOfPlatform (getBottomCollisionCoordinates collisions)
 
                 Jumping velocityY ->
                     model.locationY + ((velocityY / 1000) * delta)
@@ -326,9 +339,9 @@ isRunning model =
             not (isAirborne model.jumping) && velocityX > 0
 
 
-isGrounded : Model -> Bool
-isGrounded model =
-    if model.locationY <= 0 || bottomIsColliding model blockList then
+isGrounded : Model -> List Collision -> Bool
+isGrounded model collisions =
+    if model.locationY <= 0 || isBottomColliding collisions then
         True
     else
         False
@@ -358,6 +371,14 @@ isFalling jumping =
 
         Grounded ->
             False
+
+
+isBlockedOnSide : Model -> List Coordinates -> Bool
+isBlockedOnSide model blockList =
+    if rightIsColliding model blockList || leftIsColliding model blockList then
+        True
+    else
+        False
 
 
 animationFrame : Model -> String
@@ -417,10 +438,10 @@ overlapCheck coordinates model =
             model.locationY
 
         marioLeftEdge =
-            model.locationX + (spriteWidth * 0.5)
+            model.locationX
 
         marioRightEdge =
-            model.locationX + (spriteWidth * 0.75)
+            model.locationX + spriteWidth
 
         marioTopEdge =
             model.locationY + spriteHeight
@@ -437,7 +458,7 @@ overlapCheck coordinates model =
         marioOverlappingTop =
             marioTopEdge < (coordinates.y + blockSize) && marioTopEdge > coordinates.y
     in
-        (marioOverlappingBottom || marioOverlappingTop) && (marioOverlappingRight || marioOverlappingLeft)
+        ((marioOverlappingBottom || marioOverlappingTop) && (marioOverlappingRight || marioOverlappingLeft))
 
 
 bottomOverlapCheck : Coordinates -> Model -> List Collision -> List Collision
@@ -450,7 +471,7 @@ bottomOverlapCheck coordinates model list =
             marioBottomEdge < (coordinates.y + blockSize) && marioBottomEdge > coordinates.y
     in
         if overlapCheck coordinates model && marioOverlappingBottom then
-            BottomEdge :: list
+            BottomEdge coordinates :: list
         else
             list
 
@@ -465,7 +486,7 @@ topOverlapCheck coordinates model list =
             marioTopEdge < (coordinates.y + blockSize) && marioTopEdge > coordinates.y
     in
         if overlapCheck coordinates model && marioOverlappingTop then
-            TopEdge :: list
+            TopEdge coordinates :: list
         else
             list
 
@@ -474,13 +495,13 @@ leftOverlapCheck : Coordinates -> Model -> List Collision -> List Collision
 leftOverlapCheck coordinates model list =
     let
         marioLeftEdge =
-            model.locationX + (spriteWidth * 0.5)
+            model.locationX
 
         marioOverlappingLeft =
             marioLeftEdge < (coordinates.x + blockSize) && marioLeftEdge > coordinates.x
     in
         if overlapCheck coordinates model && marioOverlappingLeft then
-            LeftEdge :: list
+            LeftEdge coordinates :: list
         else
             list
 
@@ -489,13 +510,13 @@ rightOverlapCheck : Coordinates -> Model -> List Collision -> List Collision
 rightOverlapCheck coordinates model list =
     let
         marioRightEdge =
-            model.locationX + (spriteWidth * 0.75)
+            model.locationX + spriteWidth
 
         marioOverlappingRight =
             marioRightEdge > coordinates.x && marioRightEdge < (coordinates.x + blockSize)
     in
         if overlapCheck coordinates model && marioOverlappingRight then
-            RightEdge :: list
+            RightEdge coordinates :: list
         else
             list
 
@@ -513,9 +534,9 @@ isOverlapping model coordinates =
             |> rightOverlapCheck coordinates model
 
 
-blockOverlapCheck : List Coordinates -> Model -> List (List Collision)
+blockOverlapCheck : List Coordinates -> Model -> List Collision
 blockOverlapCheck blockList model =
-    List.map (isOverlapping model) blockList
+    List.concatMap (isOverlapping model) blockList
 
 
 listNotEmpty : List Collision -> Bool
@@ -528,17 +549,14 @@ listNotEmpty list =
             True
 
 
-findCollisions : List Coordinates -> Model -> List (List Collision)
-findCollisions blockList model =
-    List.filter listNotEmpty (blockOverlapCheck blockList model)
-
-
 isBottomCollision : Collision -> Bool
 isBottomCollision collision =
-    if collision == BottomEdge then
-        True
-    else
-        False
+    case collision of
+        BottomEdge _ ->
+            True
+
+        _ ->
+            False
 
 
 hasBottomCollision : List Collision -> Bool
@@ -549,14 +567,132 @@ hasBottomCollision list =
         False
 
 
-findBottomCollisions : Model -> List Coordinates -> List Bool
-findBottomCollisions model blockList =
-    List.map hasBottomCollision (blockOverlapCheck blockList model)
+isTopCollision : Collision -> Bool
+isTopCollision collision =
+    case collision of
+        TopEdge _ ->
+            True
+
+        _ ->
+            False
 
 
-bottomIsColliding : Model -> List Coordinates -> Bool
-bottomIsColliding model blockList =
-    List.member True (findBottomCollisions model blockList)
+hasTopCollision : List Collision -> Bool
+hasTopCollision list =
+    if List.any isTopCollision list then
+        True
+    else
+        False
+
+
+isRightCollision : Collision -> Bool
+isRightCollision collision =
+    case collision of
+        RightEdge _ ->
+            True
+
+        _ ->
+            False
+
+
+hasRightCollision : List Collision -> Bool
+hasRightCollision collisions =
+    let
+        bottomCoordinates : List Coordinates
+        bottomCoordinates =
+            List.filter isBottomCollision collisions
+                |> List.filterMap extractCoordinates
+
+        rightCollisions =
+            List.filter isRightCollision collisions
+
+        dontHaveBottomCollision : Collision -> Bool
+        dontHaveBottomCollision rightCollision =
+            bottomCoordinates
+                |> List.all (\bottomCoordinate -> Just bottomCoordinate /= extractCoordinates rightCollision)
+    in
+        rightCollisions
+            |> List.filter dontHaveBottomCollision
+            |> Debug.log "rightCollisions"
+            |> List.isEmpty
+            |> not
+
+
+
+-- if List.any isRightCollision collisions then
+--     True
+-- else
+--     False
+-- collisions
+--     |> List.filter isRightCollision
+--     |> extractCoordinates
+
+
+isLeftCollision : Collision -> Bool
+isLeftCollision collision =
+    case collision of
+        LeftEdge _ ->
+            True
+
+        _ ->
+            False
+
+
+hasLeftCollision : List Collision -> Bool
+hasLeftCollision list =
+    if List.any isLeftCollision list then
+        True
+    else
+        False
+
+
+
+-- findBottomCollisions : Model -> List Coordinates -> List Bool
+-- findBottomCollisions model blockList =
+--     List.map isBottomCollision (blockOverlapCheck blockList model)
+
+
+isBottomColliding : List Collision -> Bool
+isBottomColliding collisions =
+    collisions
+        |> List.map isBottomCollision
+        |> List.any identity
+
+
+
+-- bottomIsColliding : Model -> List Coordinates -> Bool
+-- bottomIsColliding model blockList =
+--     List.member True (findBottomCollisions model blockList)
+
+
+findTopCollisions : Model -> List Coordinates -> List Bool
+findTopCollisions model blockList =
+    List.map isTopCollision (blockOverlapCheck blockList model)
+
+
+topIsColliding : Model -> List Coordinates -> Bool
+topIsColliding model blockList =
+    List.member True (findTopCollisions model blockList)
+
+
+findRightCollisions : Model -> List Coordinates -> List Bool
+findRightCollisions model blockList =
+    List.map isRightCollision (blockOverlapCheck blockList model)
+
+
+rightIsColliding : Model -> List Coordinates -> Bool
+rightIsColliding model blockList =
+    List.member True (findRightCollisions model blockList)
+
+
+findLeftCollisions : Model -> List Coordinates -> List Bool
+findLeftCollisions model blockList =
+    List.map isLeftCollision (blockOverlapCheck blockList model)
+
+
+leftIsColliding : Model -> List Coordinates -> Bool
+leftIsColliding model blockList =
+    List.member True (findLeftCollisions model blockList)
 
 
 findIndexOfLastTrue : List Bool -> Int
@@ -579,15 +715,78 @@ findCollidingBlock blockList index =
         (Array.get index (Array.fromList blockList))
 
 
-getBottomCollisionCoordinates : Model -> List Coordinates -> Coordinates
-getBottomCollisionCoordinates model blockList =
-    findBottomCollisions model blockList
+getBottomCollisionCoordinates : List Collision -> Coordinates
+getBottomCollisionCoordinates collisions =
+    collisions
+        |> List.filter isBottomCollision
+        |> List.head
+        |> Maybe.andThen extractCoordinates
+        |> Maybe.withDefault { x = 0, y = negate blockSize }
+
+
+extractCoordinates : Collision -> Maybe Coordinates
+extractCoordinates collision =
+    case collision of
+        TopEdge coord ->
+            Just coord
+
+        BottomEdge coord ->
+            Just coord
+
+        LeftEdge coord ->
+            Just coord
+
+        RightEdge coord ->
+            Just coord
+
+        None ->
+            Nothing
+
+
+
+-- findBottomCollisions model blockList
+--     |> findIndexOfLastTrue
+--     |> findCollidingBlock blockList
+
+
+getTopCollisionCoordinates : Model -> List Coordinates -> Coordinates
+getTopCollisionCoordinates model blockList =
+    findTopCollisions model blockList
         |> findIndexOfLastTrue
         |> findCollidingBlock blockList
 
 
-findPlatformY : Coordinates -> Float
-findPlatformY coordinates =
+getRightCollisionCoordinates : Model -> List Coordinates -> Coordinates
+getRightCollisionCoordinates model blockList =
+    findRightCollisions model blockList
+        |> findIndexOfLastTrue
+        |> findCollidingBlock blockList
+
+
+getLeftCollisionCoordinates : Model -> List Coordinates -> Coordinates
+getLeftCollisionCoordinates model blockList =
+    findLeftCollisions model blockList
+        |> findIndexOfLastTrue
+        |> findCollidingBlock blockList
+
+
+findBottomOfPlatform : Coordinates -> Float
+findBottomOfPlatform coordinates =
+    coordinates.y
+
+
+findTopOfPlatform : Coordinates -> Float
+findTopOfPlatform coordinates =
+    coordinates.y + (blockSize - 0.25)
+
+
+findLeftSideWall : Coordinates -> Float
+findLeftSideWall coordinates =
+    coordinates.x
+
+
+findRightSideWall : Coordinates -> Float
+findRightSideWall coordinates =
     coordinates.y + (blockSize - 0.25)
 
 
@@ -610,12 +809,13 @@ blockView coordinates =
         []
 
 
-blockList : List Coordinates
-blockList =
+initBlockList : List Coordinates
+initBlockList =
     [ { x = 100, y = 18 }
     , { x = 100 + blockSize, y = 18 }
     , { x = 100 + (blockSize * 2), y = 18 }
     , { x = 100 + (blockSize * 3), y = 18 }
+    , { x = 100 + (blockSize * 10), y = 0 }
     , { x = 100 + (blockSize * 3), y = 18 + (blockSize * 3) }
     , { x = 100 + (blockSize * 4), y = 18 + (blockSize * 3) }
     , { x = 100 + (blockSize * 5), y = 18 + (blockSize * 3) }
@@ -641,8 +841,8 @@ worldMap model =
                 , ( "background-color", "skyblue" )
                 ]
               -- , attribute "data-colliding" (toString (bottomIsColliding model blockList))
-              -- , attribute "data-jumping" (toString (model.jumping))
-              -- , attribute "data-collisions" (toString (findCollisions blockList model))
+            , attribute "data-jumping" (toString (model.jumping))
+            , attribute "data-collisions" (toString (blockOverlapCheck model.blocks model))
             ]
             (character model :: List.map blockView model.blocks)
 
